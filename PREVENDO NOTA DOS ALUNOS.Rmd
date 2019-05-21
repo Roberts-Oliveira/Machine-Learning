@@ -1,0 +1,315 @@
+---
+title: "PREVENDO NOTA DOS ALUNOS"
+author: "Roberto de Alencar Oliveira"
+date: "23 de abril de 2019"
+output:
+  html_document:
+    
+    df_print: paged
+  pdf_document: default
+---
+
+#ATIVIDADE DE R COM MACHINE LEARNING PARA PREVISÃO DAS NOTAS DOS ALUNOS CONFORME ANÁLISE DE INFORMAÇÕES SOCIAIS
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## ETAPA 1 - Definindo o problema do negócio.
+Prever a nota final dos alunos com base em métricas sociais.<br>* Como iremos prever as notas e estas são números o método utilizado será Regressão Linear
+
+## ETAPA 2 - Definindo os dados.
+Os dados foram coletados de duas escolas portuguesas e fornecidos pela UCI - Student Performance Data Set 
+https://archive.ics.uci.edu/ml/datasets/Student+Performance
+
+As observações do arquivo são (Attribute Information:)
+
+1 school - student's school (binary: 'GP' - Gabriel Pereira or 'MS' - Mousinho da Silveira)<br>
+2 sex - student's sex (binary: 'F' - female or 'M' - male)<br>
+3 age - student's age (numeric: from 15 to 22)<br>
+4 address - student's home address type (binary: 'U' - urban or 'R' - rural)<br>
+5 famsize - family size (binary: 'LE3' - less or equal to 3 or 'GT3' - greater than 3)<br>
+6 Pstatus - parent's cohabitation status (binary: 'T' - living together or 'A' - apart)<br>
+7 Medu - mother's education (numeric: 0 - none, 1 - primary education (4th grade), 2 â€“ 5th to 9th grade, 3 â€“ secondary education or 4 â€“ higher education)<br>
+8 Fedu - father's education (numeric: 0 - none, 1 - primary education (4th grade), 2 â€“ 5th to 9th grade, 3 â€“ secondary education or 4 â€“ higher education)<br>
+9 Mjob - mother's job (nominal: 'teacher', 'health' care related, civil 'services' (e.g. administrative or police), 'at_home' or 'other')<br>
+10 Fjob - father's job (nominal: 'teacher', 'health' care related, civil 'services' (e.g. administrative or police), 'at_home' or 'other')<br>
+11 reason - reason to choose this school (nominal: close to 'home', school 'reputation', 'course' preference or 'other')<br>
+12 guardian - student's guardian (nominal: 'mother', 'father' or 'other')<br>
+13 traveltime - home to school travel time (numeric: 1 - <15 min., 2 - 15 to 30 min., 3 - 30 min. to 1 hour, or 4 - >1 hour)<br>
+14 studytime - weekly study time (numeric: 1 - <2 hours, 2 - 2 to 5 hours, 3 - 5 to 10 hours, or 4 - >10 hours)<br>
+15 failures - number of past class failures (numeric: n if 1<=n<3, else 4)<br>
+16 schoolsup - extra educational support (binary: yes or no)<br>
+17 famsup - family educational support (binary: yes or no)<br>
+18 paid - extra paid classes within the course subject (Math or Portuguese) (binary: yes or no)<br>
+19 activities - extra-curricular activities (binary: yes or no)<br>
+20 nursery - attended nursery school (binary: yes or no)<br>
+21 higher - wants to take higher education (binary: yes or no)<br>
+22 internet - Internet access at home (binary: yes or no)<br>
+23 romantic - with a romantic relationship (binary: yes or no)<br>
+24 famrel - quality of family relationships (numeric: from 1 - very bad to 5 - excellent)<br>
+25 freetime - free time after school (numeric: from 1 - very low to 5 - very high)<br>
+26 goout - going out with friends (numeric: from 1 - very low to 5 - very high)<br>
+27 Dalc - workday alcohol consumption (numeric: from 1 - very low to 5 - very high)<br>
+28 Walc - weekend alcohol consumption (numeric: from 1 - very low to 5 - very high)<br>
+29 health - current health status (numeric: from 1 - very bad to 5 - very good)<br>
+30 absences - number of school absences (numeric: from 0 to 93)<br>
+### these grades are related with the course subject, Math or Portuguese:<br>
+31 G1 - first period grade (numeric: from 0 to 20)<br>
+31 G2 - second period grade (numeric: from 0 to 20)<br>
+32 G3 - final grade (numeric: from 0 to 20, output target)<br>
+
+## ETAPA 3 - Carregando os dados
+
+Carregar o arquivo(dataset) estudantes.csv na variável df<br>* amostra de 10 observações
+
+
+```{r}
+df <- read.csv2('estudantes.csv')
+df[c(1:10),]
+```
+
+## ETAPA 4 - Carregando bibliotecas do R que serão utilizadas
+
+Agora vamos carregar as bibliotecas necessárias para execução das análises,cálculos e gráficos.<br>
+```{r}
+# install.packages("ggplot2")
+# install.packages("ggthemes")
+# install.packages("dplyr")
+# install.packages("psych")
+# install.packages("corrplot")
+# install.packages("corrgram")
+# install.packages("CaTool")
+library(ggplot2)
+library(ggthemes)
+library(dplyr)
+library(psych)
+library(corrplot)
+library(corrgram)
+library(caTools) #Pacote para dividir os dados do treino e teste
+
+```
+
+## ETAPA 5 - Explorando os dados (Pré-Processamento)
+
+O arquivo carregado possui 395 observações<br>Agora é necessários analisar os dados, variáveis e transformações necessárias.<br>
+
+Lendo o cabeçalho do arquivo<br>
+```{r}
+head(df)
+```
+Lendo detalhes das variáveis dentro do data.frame df.<br>
+```{r}
+summary(df)
+```
+Lendo as propriedades das variáveis<br>
+```{r}
+str(df)
+```
+Análise da existência de valores nulos no data.frame df<br>
+```{r}
+any(is.na(df)) 
+```
+Com a utilização de regressão linear é necessários verificar quais as variáveis são numéricas. Ao utilizar sapply é criada um table contendo somente as variáveis numéricas.<br>
+```{r}
+
+colunas_numericas <- sapply(df, is.numeric)
+colunas_numericas
+
+```
+Médias de Tendência Central da Variável G3 (grade final).<br>
+Observar que pela summary identificamos os valores máximo 20 e mínimo 0.<br>
+
+```{r}
+summary(df$G3)
+```
+
+Agora é necessário filtrar para verificar a correlação
+
+```{r}
+data_cor <- cor(df[,colunas_numericas])
+data_cor
+head(data_cor)
+```
+Este formato é complexo e não permite analisar, então vamos melhorar plotando a correlação.<br>
+
+### 1) Criando um gráfico corrplot<br>
+```{r}
+corrplot(data_cor, method = 'color')
+```
+
+Na barra o nível azul escuro é o melhor pois a correlação = 1 que mostra a força entre as variáveis<br>
+Com esta indicação é possível verificar grande correlação entre as variáveis, MENU, FEDU, G1, G2, G3 , DALC, WALC<br>
+
+### 2) Criando um gráfico corrgram que é mais fácil de identificar as variáveis fortes<br>
+
+```{r}
+corrgram(data_cor)
+```
+
+Para acompanhar a variação de notas, vamos plotar com base nos dados originais um histograma mostrando o peso de cada nota<br>
+
+```{r}
+ggplot(df, aes(x = G3)) + geom_histogram(bins = 20, alpha = 0.5, fill = 'blue') + 
+  theme_minimal()
+```
+
+É possível notar que as maiores frequências estão entre 10 e 15, o zero é removido pois são indivíduos que não realizaram as provas.<br>
+  
+Já e conhecido as variáveis que são fortes em seu relacionamento, agora vamos verificar a correlação graficamente.<br>
+
+```{r}
+#Relacionamento Forte (minha atividade)
+pairs.panels(df[c('Medu','Fedu','Dalc','Walc','freetime','goout','G1','G2')])
+```
+
+##ETAPA 6 - Treinando o modelo<br>
+
+Pacote de Machine Learning para dividir os dados em treino (70%) e teste (30%) <br>
+install.packages("CaTools") <br>
+library(caTools) <br>
+
+```{r}
+library(caTools)
+```
+
+###Fixando a semente da amostra (101)<br>
+
+```{r}
+set.seed(101)
+amostra <- sample.split(df$age, SplitRatio = 0.7)
+```
+
+###Criando dados de treino 70%<br>
+```{r}
+treino = subset(df,amostra == TRUE)
+```
+
+###Criando dados de teste 30%<br>
+
+```{r}
+teste = subset(df,amostra == FALSE)
+```
+
+###Treinando o Modelo (meu modelo)<br>
+```{r}
+modelo <- lm(G3 ~ G1 + G2 + Medu + Fedu + freetime + goout, data = df)
+modelo
+```
+###Interpretando os resultados do modelo<br>
+```{r}
+summary(modelo)
+```
+###Prevendo Notas dos Alunos (meu modelo)<br>
+
+````{r}
+previsao <- predict(modelo)
+View(previsao)
+```
+```{r}
+hist(previsao, col = "green", main = 'Previsão Notas Alunos', xlab = 'Notas')
+```
+
+###Visualizando o modelo e fazendo previsões<br>
+
+```{r}
+res <- residuals(modelo)
+head(res)
+```
+###Histograma dos resíduos<br>
+```{r}
+hist(res, main = 'Resíduo')
+```
+###Convertendo o objeto para data.frame<br>
+```{r}
+res<-as.data.frame(res)
+res
+```
+###Gráfico do resíduos<br>
+
+```{r}
+ggplot(res, aes(res)) + 
+  geom_histogram(fill = 'blue',
+                 alpha = 0.5,
+                 binwidth = 1)
+```
+###Plot do Modelo<br>
+```{r}
+plot(modelo)
+```
+
+###Fazendo as previsões<br>
+```{r}
+prevendo_G3<-predict(modelo,teste)
+```
+###Resultados <br>
+```{r}
+resultados <-cbind(prevendo_G3, teste$G3)
+```
+###Alterando o nome das coluntas<br>
+```{r}
+colnames(resultados)<- c('Previsto','Real')
+```
+###Corrigindo valores da previsao onde G3 é <0 para 0 e >20 para 20, que são os valores mínimo e máximos das observações.<br>
+```{r}
+#Tratando os valores negativos
+
+resultados<-as.data.frame(resultados)
+trata_zero <- function(x)
+  if (x < 0 ){
+    return(0)
+    }else{
+      return(x)
+    }
+
+#Tratando os valores maior que 20 
+
+trata_maior <- function(y)
+  if (y > 20 ){
+    return(20)
+  }else{
+    return(y)
+  }
+```
+
+```{r}
+# Aplicando a função trata_zero para corrigir as notas negativas
+resultados$Previsto <-sapply(resultados$Previsto, trata_zero)
+resultados$Previsto <-sapply(resultados$Previsto, trata_maior)
+
+```
+###Resultados<br>
+```{r}
+summary(resultados)
+```
+
+###Calculando o erro médio<br>
+Quão distantes seus valores previstos estão dos valores observados<br>
+MSE (Minimal# Square Error)<br>
+
+```{r}
+mse <- mean((resultados$Real - resultados$Previsto)^2)
+print(mse)
+```
+###RMSE<br>
+```{r}
+rmse <-mse^0.5
+rmse
+```
+
+###Calculando o R Squared<br>
+
+```{r}
+SSE <- sum(resultados$Previsto - resultados$Real)^2
+SST <- sum(mean(df$G3) - resultados$Real)^2
+```
+
+###R-Squared<br>
+Ajuda a avaliar o nível de precisão do nosso modelo<br>
+Quanto maior melhor<br>
+
+```{r}
+R2 = 1 - (SSE/SST)
+R2
+```
