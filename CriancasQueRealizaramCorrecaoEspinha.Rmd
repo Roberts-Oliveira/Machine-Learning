@@ -1,0 +1,86 @@
+---
+title: "Crianças que realizaram cirurgia de correção na espinha"
+author: "Roberto de Alencar Oliveira"
+date: "25 de abril de 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Etapa 1 - Problema do negócio
+
+Criar árvore de decisão para avaliação das crianças que realizaram cirurgia de correção na espinha.
+
+#Etapa 2 - Definindo os dados
+
+Será utilizado o dataset kyphosis que é um modelo do R <br>
+
+Os campos do arquivo são: <br>
+
+*Kyphosis = a factor with levels absent present indicating if a kyphosis (a type of deformation) was present after the operation.<br>
+*Age = in months <br>
+*Number = the number of vertebrae involved <br>
+*Start = the number of the first (topmost) vertebra operated on. <br>
+
+#Etapa 3 - Explorando os dados
+
+Visualizando as variáveis.<br>
+```{r}
+library(rpart)
+library(rpart.plot)
+analise <- kyphosis
+str(analise)
+
+```
+
+Visualizando as observações.<br>
+
+```{r}
+head(analise)
+```
+
+#Etapa 4 - Carregando os dados
+
+Carregando os dados na variável fit.<br>
+Ao lado esquerdo do ~ está a variável alvo, a direita os campos
+
+```{r}
+fit <- rpart(Kyphosis ~ Age + Number + Start, data = analise)
+```
+Visualizando a árvore de decisão em modo texto.<br>
+
+```{r}
+printcp(fit)
+```
+
+Plotando a árvore de decisão com a função printcp() do pacote library(rpart).<br>
+
+```{r}
+
+plot(fit)
+
+```
+
+Adicionando à árvore de decisão texto das ligações.<br>
+
+
+```{r}
+plot(fit)
+text(fit, use.n = TRUE)
+```
+
+Plotando a árvore de decisão com a função prp()
+
+```{r}
+prp(fit)
+```
+
+Plotando a árvore de decisão com a função rpart.plot do pacote library(rpart.plot).<br>
+
+```{r}
+
+rpart.plot(rpart(Kyphosis ~ Age + Number + Start, data = kyphosis))
+
+```
+
