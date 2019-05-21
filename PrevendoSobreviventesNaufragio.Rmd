@@ -1,0 +1,262 @@
+---
+title: "Machine Learning - Classificação - Prevendo Sobreviventes de um Naufrágio <br>
+Atividade do treinamendo Big Data Analytics com R e Microsoft Azure Machine Learning da formação Cientista de Dados da DSA."
+author: "Roberto de Alencar Oliveira"
+date: "7 de maio de 2019"
+output: html_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#ETAPA 1 - Definição do Problema do Negócio
+
+  Prever a quantidade de sobreviventes ou não sobreviventes de um naufrágio.<br>
+
+#ETAPA 2 - Coletando dados
+
+  Nesta atividade de classificação será utilizado o dataset Titanic do Kaggle, o endereço do dataset é https://www.kaggle.com/c/titanic/data
+
+Formato:<br>
+
+Variable  	Definition	Key </br>
+survival =	Survival 	0 = No, 1 = Yes </br>
+pclass  = Ticket class 	1 = 1st, 2 = 2nd, 3 = 3rd </br>
+sex  =	Sex 	</br>
+Age  =	Age in years </br>
+sibsp  = # of siblings / spouses aboard the Titanic </br>
+parch  =	# of parents / children aboard the Titanic 	</br>
+ticket  =	Ticket number </br>	
+fare  =	Passenger fare </br>
+cabin  =	Cabin number 	</br>
+embarked port of Embarkation =	C = Cherbourg, Q = Queenstown, S = Southampton </br>
+
+Carregando o dataset Titanic na variável dados_treino.</br> 
+
+```{r}
+dados_treino <-read.csv('datasets/titanic-train.csv', stringsAsFactors = FALSE)
+
+```
+#ETAPA 3 - Explorando dados (pre-processmento)
+
+###Analisando os dados missing
+
+Vamos utilizar o pacote amelia para graficamente analisar os dados missing. Este pacote é excelente para documentar dados missing</br>
+
+```{r}
+#install.packages("Amelia")
+library(Amelia)
+```
+```{r}
+missmap(dados_treino,
+        main = "Treinamento de dados do Titanic - Mapa de dados missing",
+        col = c('Red','Black'),
+        legend = FALSE)
+```
+
+  Após visualização da função missmap é possível identificar que a variável Age possui diversos valores missing. </br>
+  
+###Visualizando outras variáveis com a função ggplot
+
+
+Contagem de sobreviventes(1) e não sobreviventes(0)
+```{r}
+library(ggplot2)
+ggplot(dados_treino,aes(Survived)) + geom_bar(aes(fill = factor(Survived)))
+
+```
+
+Distribuição dos passageiros por classes.<br>
+
+```{r}
+hist(dados_treino$Pclass,
+     main = "Distruição de passageiros por Classe",
+     xlab = "Classe",
+     ylab = "Passageiros")
+     
+```
+
+Distribuição de passageiros por Sex.</br>
+
+```{r}
+ggplot(dados_treino,aes(Sex)) + geom_bar(aes(fill = factor(Sex)), alpha = 0.5)
+```
+
+Distribuição dos passageiros por idade
+
+```{r}
+ggplot(dados_treino,aes(Age)) + geom_histogram(fill = 'blue', bins = 20, alpha = 0.5)
+```
+
+Distribuição dos passageiros por SibSp
+
+```{r}
+ggplot(dados_treino,aes(SibSp)) + geom_bar(fill = 'red', alpha = 0.5)
+```
+
+Distruição dos passageiros por Fare
+
+```{r}
+ggplot(dados_treino,aes(Fare)) + geom_histogram(fill = 'green', color = 'black', alpha = 0.5)
+```
+
+Limpando os dados.</br>
+Para tratar os dados missing, usaremos o recurso de imputation.
+Essa técnica visa substituir os valores missing por outros valores,
+que podem ser a média da variável ou qualquer outro valor escolhido pelo Cientista de Dados.</br>
+
+Verificando as idades por classe dos passageiros.</br>
+
+```{r}
+pl <- ggplot(dados_treino, aes(Pclass,Age)) + geom_boxplot(aes(group = Pclass, fill = factor(Pclass), alpha = 0.4)) 
+pl + scale_y_continuous(breaks = seq(min(0), max(80), by = 2))
+```
+
+  Foi possível verificar que os passageiros mais velhos, mais ricos tendem
+a ficar na classe 1 e os mais novos na classe 3 que é mais baixa.</br>
+
+  Com a informação vamos imputar os valores missing com a média das classes.</br>
+  
+```{r}
+impute_age <- function(age, class){
+  out <- age
+  for (i in 1:length(age)){
+    
+    if (is.na(age[i])){
+      
+      if (class[i] == 1){
+        out[i] <- 37
+        
+      }else if (class[i] == 2){
+        out[i] <- 29
+        
+      }else{
+        out[i] <- 24
+      }
+    }else{
+      out[i]<-age[i]
+    }
+  }
+  return(out)
+}
+```
+
+```{r}
+fixed.ages <- impute_age(dados_treino$Age, dados_treino$Pclass)
+dados_treino$Age <- fixed.ages
+
+```
+Agora vamos verificar como ficou o mapa de dados missing após a limpeza
+
+```{r}
+missmap(dados_treino, 
+        main = "Titanic Training Data - Mapa de Dados Missing", 
+        col = c("red", "black"), 
+        legend = FALSE)
+
+```
+
+  É possível ver que não existem mais dados missing pois o tratamento foi realizado com sucesso. </br>
+  
+# ETAPA 4 - Treinando o modelo
+
+  Para termos dados que não afetarão as estatísticas vamos remover as variáveis que podem afetar os valores.</br>
+  Nesta limpeza vamos usar a função dplyr.</br>
+  
+```{r}
+library(dplyr)
+dados_treino<-select(dados_treino, -PassengerId, -Name, -Ticket, -Cabin)
+
+```
+```{r}
+str(dados_treino)
+```
+
+Treinando o modelo com o modelo glm que é uma regressão logística.</br>
+
+```{r}
+modelo <-glm(formula = Survived ~.,
+             family=binomial(link='logit'),
+             data = dados_treino)
+```
+  Avaliando as variáveis mais significativas 
+
+```{r}
+summary(modelo)
+```
+  Conforme a função as variáveis mais significativas são Sexmale,Age e Pclass.</br>
+  Obs.:As variaveis mais representativas serão apresentadas no topo com asteriscos.</br>
+
+  Fazendo a previsão nos dados de teste com o pacote CaTools.</br>
+  
+```{r}
+library(caTools)
+set.seed(101)
+```
+  Fazendo o Split dos dados em treino e teste. </br>
+  
+```{r}
+split = sample.split(dados_treino$Survived, SplitRatio = 0.70)
+
+```
+  O valor de 0.70 faz o arquivo gerar 70% de valores TRUE e 30% de valores FALSE.</br>
+  
+Criando os datasets de treino e teste
+
+```{r}
+
+dados_treino_final<-subset(dados_treino, split ==TRUE)
+dados_teste_final<-subset(dados_treino,split == FALSE)
+
+```
+
+  Gerando o modelo com a versão final do dataset. Para treino serão utilizadas 623 observações criadas com subset(dados_treino, split ==TRUE). </br>
+  
+```{r}
+modelo_final<-glm(formula = Survived ~.,
+                  family = binomial(link='logit'),
+                  data = dados_treino_final)
+```
+  formula = Survived ~. = determina quais variáveis serão analisadas
+  family = regressão logística do tipo binomial
+  data = base de dados que contém as variáveis que serão analisadas
+  
+  
+  Verificando o resultado final.</br>
+  
+```{r}
+summary(modelo_final)
+```
+
+  Prevendo a acurácia do modelo, será utilizado o data.frame dados_teste_final contendo 268 observações que foram geradas com subset(dados_treino,split == FALSE).</br>
+ 
+```{r}
+fitted.probabilities <- predict(modelo_final,
+                                newdata = dados_teste_final,
+                                type = 'response')
+```
+  
+  Calculando valores.<br>
+```{r}
+fitted.results <-ifelse(fitted.probabilities>0.5,1,0)
+misClasificError <- mean(fitted.results !=dados_teste_final$Survived)
+print(paste('Acuracia',1-misClasificError))
+```
+
+
+
+```{r}
+table(dados_teste_final$Survived, fitted.probabilities>0.5)
+```
+
+
+  
+
+
+  
+  
+  
+
+
