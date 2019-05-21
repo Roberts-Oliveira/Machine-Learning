@@ -1,0 +1,234 @@
+---
+title: "Classificação dos Votos Eleição USA 84"
+author: "Roberto de Alencar Oliveira"
+date: "6 de maio de 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#ETAPA 1 - PROBLEMA NO NEGÓCIO
+
+Prever os votos dos Candidatos Republicanos e Democratas da Eleição de 1984.<br>
+
+#ETAPA 2 - COLETAR DADOS
+
+Para esta atividade será utilizado o dataset HouseVotes84 do pacote mlbench.<br>
+
+Description
+
+This data set includes votes for each of the U.S. House of Representatives Congressmen on the 16 key votes identified by the CQA. The CQA lists nine different types of votes: voted for, paired for, and announced for (these three simplified to yea), voted against, paired against, and announced against (these three simplified to nay), voted present, voted present to avoid conflict of interest, and did not vote or otherwise make a position known (these three simplified to an unknown.<br> 
+
+Instalação do pacote mlbench e carregamento dos dados na variável HouseVotes84
+
+```{r}
+#install.packages("mlbench")
+library(mlbench)
+data("HouseVotes84")
+
+```
+ 
+### Estrutura do dataset
+ 
+ A data frame com 435 observações e 17 variáveis:<br>
+
+1	 Class Name: 2 (democrat, republican)<br>
+2	 handicapped-infants: 2 (y,n)<br>
+3	 water-project-cost-sharing: 2 (y,n)<br>
+4	 adoption-of-the-budget-resolution: 2 (y,n)<br>
+5	 physician-fee-freeze: 2 (y,n)<br>
+6	 el-salvador-aid: 2 (y,n)<br>
+7	 religious-groups-in-schools: 2 (y,n)<br>
+8	 anti-satellite-test-ban: 2 (y,n)<br>
+9	 aid-to-nicaraguan-contras: 2 (y,n)<br>
+10 mx-missile: 2 (y,n)<br>
+11 immigration: 2 (y,n)<br>
+12 synfuels-corporation-cutback: 2 (y,n)<br>
+13 education-spending: 2 (y,n)<br>
+14 superfund-right-to-sue: 2 (y,n)<br>
+15 crime: 2 (y,n)<br>
+16 duty-free-exports: 2 (y,n)<br>
+17 export-administration-act-south-africa: 2 (y,n)<br>
+
+#ETAPA 3 - EXPLORAR OS DADOS
+
+Análise exploratória para entendimento do comportamento dos dados.<br>
+
+Total de votos por tipo de opção (y-yes ou n-no).<br>
+
+```{r}
+plot(as.factor(HouseVotes84[,2]))
+title(main = "Votes cast for issue", xlab = "vote", ylab = "# reps")
+
+```
+
+Total de votos Republicanos.<br>
+
+```{r}
+plot(as.factor(HouseVotes84[HouseVotes84$Class == 'republican', 2]))
+title(main = "Republican votes cast for issue 1", xlab = "vote", ylab = "# reps")
+
+```
+
+Total de votos Democratas.<br>
+
+```{r}
+plot(as.factor(HouseVotes84[HouseVotes84$Class == 'democrat', 2]))
+title(main = "Democrat votes cast for issue 1", xlab = "vote", ylab = "# reps")
+```
+
+###Tratamento dos dados (pre-processamento dos dados)
+
+Função que retorna o número de NA's por voto e classe( democrata e republicano).<br>
+```{r}
+na_by_col_class <- function (col,cls){
+  return(sum(is.na(HouseVotes84[,col]) & HouseVotes84$Class==cls))}
+
+```
+Função que conta Y e N
+```{r}
+p_y_col_class <- function(col,cls){
+  sum_y <- sum(HouseVotes84[,col] == 'y' & HouseVotes84$Class == cls, na.rm = TRUE)
+  sum_n <- sum(HouseVotes84[,col] == 'n' & HouseVotes84$Class == cls, na.rm = TRUE)
+  return(sum_y/(sum_y+sum_n))}
+```
+
+###Testando as funções
+
+Total de votos NA dos democratas.<br>
+```{r}
+na_by_col_class(2,'democrat')
+```
+
+Total de votos NA dos republicanos.<br>
+```{r}
+na_by_col_class(2,'republican')
+```
+
+Para democratas<br>
+```{r}
+p_y_col_class(2,'democrat')
+```
+Para republicanos<br>
+
+```{r}
+p_y_col_class(2,'republican')
+```
+###Adicionando valor nas observações sem informação (NA)
+
+```{r}
+for (i in 2:ncol(HouseVotes84)) {
+  if(sum(is.na(HouseVotes84[,i])>0)) {
+    c1 <- which(is.na(HouseVotes84[,i]) & HouseVotes84$Class == 'democrat',arr.ind = TRUE)
+    c2 <- which(is.na(HouseVotes84[,i]) & HouseVotes84$Class == 'republican',arr.ind = TRUE)
+    HouseVotes84[c1,i] <- ifelse(runif(na_by_col_class(i,'democrat'))<p_y_col_class(i,'democrat'),'y','n')
+    HouseVotes84[c2,i] <- ifelse(runif(na_by_col_class(i,'republican'))<p_y_col_class(i,'republican'),'y','n')}
+}
+```
+#ETAPA 4 - TREINANDO O MODELO
+
+###Gerando os dados de treino e dados de teste
+
+```{r}
+HouseVotes84[,"train"] <- ifelse(runif(nrow(HouseVotes84)) < 0.80,1,0)
+```
+
+```{r}
+trainColNum <- grep("train",names(HouseVotes84))
+```
+
+###Gerando os dados de treino e teste a partir da coluna de treino
+
+```{r}
+trainHouseVotes84 <- HouseVotes84[HouseVotes84$train == 1, -trainColNum]
+```
+```{r}
+testHouseVotes84 <- HouseVotes84[HouseVotes84$train == 0, -trainColNum]
+```
+
+#ETAPA 5 - Criando o modelo NaiveBayes
+
+Instalando o pacote e1071 que contém o modelo NaiveBayes
+```{r}
+#install.packages('e1071')
+library(e1071)
+```
+
+Treinando o modelo NaiveBayes
+```{r}
+nb_model <-naiveBayes(Class ~., data = trainHouseVotes84)
+```
+Visualizando o resultado
+```{r}
+nb_model
+```
+```{r}
+summary(nb_model)
+```
+
+```{r}
+str(nb_model)
+```
+
+### Fazendo as previsões
+
+```{r}
+nb_test_predict <- predict(nb_model, testHouseVotes84[,-1])
+```
+Matrix de confusão
+```{r}
+table(pred = nb_test_predict, true = testHouseVotes84$Class)
+
+```
+
+###Média
+
+```{r}
+mean(nb_test_predict == testHouseVotes84$Class)
+```
+
+###Função para registrar todos os resultados do modelo
+
+```{r}
+# Função para executar o registrar todos os resultados do modelo
+nb_multiple_runs <- function(train_fraction, n) {
+  fraction_correct <- rep(NA,n)
+  for (i in 1:n) {
+    HouseVotes84[,"train"] <- ifelse(runif(nrow(HouseVotes84))<train_fraction,1,0)
+    trainColNum <- grep("train", names(HouseVotes84))
+    trainHouseVotes84 <- HouseVotes84[HouseVotes84$train == 1,-trainColNum]
+    testHouseVotes84 <- HouseVotes84[HouseVotes84$train == 0,-trainColNum]
+    nb_model <- naiveBayes(Class ~ ., data = trainHouseVotes84)
+    nb_test_predict <- predict(nb_model, testHouseVotes84[,-1])
+    fraction_correct[i] <- mean(nb_test_predict == testHouseVotes84$Class)
+  }
+  return(fraction_correct)
+}
+```
+
+###Executando o modelo 20 vezes
+
+```{r}
+fraction_correct_predictions <- nb_multiple_runs(0.8, 20)
+fraction_correct_predictions
+
+```
+
+###Resumo dos resultados
+
+```{r}
+summary(fraction_correct_predictions)
+```
+
+###Cálculo do desvio padrão
+
+```{r}
+sd(fraction_correct_predictions)
+```
+
+###Resultado das execuções
+
+Desvio padrão menor que 0.03
+Resultados próximos de 0.85 e 0.95
