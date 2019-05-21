@@ -1,0 +1,755 @@
+---
+title: Prevendo a Demanda por Aluguel de Bicicletas. </br>  Atividade do treinamento de Big Data Analytics com R e Microsoft Azure Machine Learning da formação Cientista de Dados da DSA.</br>
+author: "Roberto de Alencar Oliveira"
+date: "17 de maio de 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# ETAPA 1 - Definição do Problema do Negócio
+
+  Prever a demanda de bicicletas alugadas dentro de uma hora específica.</br>
+  
+# ETAPA 2 - Coletando dados
+
+  Os dados utilizados são baseados em informações reais da empresa de aluguel de bicicletas Capital Bikeshare que opera o aluguel de bicicletas na cidade de Washington, DC.</br>
+  O dataset utilizado contém 17.379 observações e 17 variáveis e representa o número de bicicletas alugadas dentro de horas específicas do dia, nos anos de 2011 e 2012, condições climáticas como temperatura, velocidade do vento, umidade, foram incluidas no dataset.</br>
+  o dataset pode ser encontrado em       https://archive.ics.uci.edu/ml/datasets/Bike+Sharing+Dataset
+  
+### Atributos do arquivo / dicionário de dados
+
+- instant: record index
+- dteday : date
+- season : season (1:springer, 2:summer, 3:fall, 4:winter)
+- yr : year (0: 2011, 1:2012)
+- mnth : month ( 1 to 12)
+- hr : hour (0 to 23)
+- holiday : weather day is holiday or not (extracted from [Web Link])
+- weekday : day of the week
+- workingday : if day is neither weekend nor holiday is 1, otherwise is 0.
++ weathersit :
+- 1: Clear, Few clouds, Partly cloudy, Partly cloudy
+- 2: Mist + Cloudy, Mist + Broken clouds, Mist + Few clouds, Mist
+- 3: Light Snow, Light Rain + Thunderstorm + Scattered clouds, Light Rain + Scattered clouds
+- 4: Heavy Rain + Ice Pallets + Thunderstorm + Mist, Snow + Fog
+- temp : Normalized temperature in Celsius. The values are derived via (t-t_min)/(t_max-t_min), t_min=-8, t_max=+39 (only in hourly scale)
+- atemp: Normalized feeling temperature in Celsius. The values are derived via (t-t_min)/(t_max-t_min), t_min=-16, t_max=+50 (only in hourly scale)
+- hum: Normalized humidity. The values are divided to 100 (max)
+- windspeed: Normalized wind speed. The values are divided to 67 (max)
+- casual: count of casual users
+- registered: count of registered users
+- cnt: count of total rental bikes including both casual and registered
+
+### Determinando a variável azure.
+
+  Este script será escrito para execução no R ou no Azure Machine Learning.</br>
+  A variável Azure <- Variável que determinará se o código deverá executar no Azure ou no R, sua alteração é manual, FALSE executa no R e TRUE executa no Azure.</br>
+ 
+### Carregando arquivo bikes, as variáveis que serão usadas,
+### e normalizando as colunas temp, windspeed, cnt
+
+```{r}
+Azure <- FALSE
+```
+O script executa conforme a variável Azure
+
+```{r}
+# Execução de acordo com o valor da variável Azure
+if(Azure){
+  source("src/Tools.R")
+  bikes <- maml.mapInputPort(1)
+  bikes$dteday <- set.asPOSIXct(bikes)
+}else{
+  source("src/Tools.R")
+  bikes <- read.csv("bikes.csv", sep = ",", header = TRUE, stringsAsFactors = FALSE )}
+``` 
+
+A variável cols receberá as colunas que serão usadas no novo dataset Bikes.</br>
+
+```{r}
+  
+cols <- c("dteday", "mnth", "hr", "holiday",
+            "workingday", "weathersit", "temp",
+            "hum", "windspeed", "cnt")
+```
+
+Criando um subset dos dados com as colunas selecionadas.</br>
+  
+```{r}
+bikes <- bikes[, cols]
+
+```
+
+Transformando a variável bikes$dteday para conter a hora.</br>
+
+```{r}
+
+bikes$dteday <- char.toPOSIXct(bikes)
+
+```
+
+Esta linha acima gera dois valores NA e a linha abaixo corrige.</br>
+
+```{r}
+bikes <- na.omit(bikes)
+```
+  
+Normalizar as variáveis preditoras numericas.</br>
+ 
+```{r}
+cols <- c("temp", "hum", "windspeed") 
+bikes[, cols] <- scale(bikes[, cols]) 
+```
+
+### Verificando as variáveis.
+
+
+Criar uma nova variável para indicar se o dia da semana é workingday ou Holiday).</br>
+
+workingday = se dia não é nem fim de semana nem feriado é 1, caso contrário é 0
+(0-sim, 1-não)</br>
+holiday = se o dia é feriado ou não (0-não , 1-sim)</br>
+
+```{r}
+# Criar uma nova variável para indicar dia da semana (workday)
+bikes$isWorking <- ifelse(bikes$workingday & !bikes$holiday, 1, 0)  
+
+```
+
+Adicionando uma coluna com a quantidade de alugueis de bicicleas por mês.</br>
+
+```{r}
+bikes<-month.count(bikes)
+
+```
+
+Convertendo como factor o dia da semana
+
+```{r}
+# Criar um fator ordenado para o dia da semana, comecando por segunda-feira
+# Neste fator eh convertido para ordenado numérico para ser compativel com os tipos de dados do Azure ML
+bikes$dayWeek <- as.factor(weekdays(bikes$dteday))
+
+```
+
+### Feature Engineering (Engenharia de Atributos)
+
+ Se os nomes dos dias da semana estiverem em português na coluna bikes$dayWeek,  execute o Bloco1 abaixo, caso contrátio, execute o Bloco2 com os nomes em inglês. 
+```{r}
+str(bikes)
+```
+
+
+Verificando automaticamente qual bloco usar
+```{r}
+
+print(get_iso<-localeToCharset(locale=Sys.getlocale("LC_TIME")))
+
+```
+
+### Alterando de data da semana para sequência numérida no dataset.
+
+```{r}
+if (get_iso=="ISO8859-1"){
+  bikes$dayWeek <- as.numeric(ordered(bikes$dayWeek, 
+                                    levels = c("segunda-feira", 
+                                               "terça-feira", 
+                                               "quarta-feira", 
+                                               "quinta-feira", 
+                                               "sexta-feira", 
+                                               "sábado", 
+                                               "domingo")))
+  }else{
+    bikes$dayWeek <- as.numeric(ordered(bikes$dayWeek, 
+                                    levels = c("Monday", 
+                                               "Tuesday", 
+                                               "Wednesday", 
+                                               "Thursday", 
+                                               "Friday", 
+                                               "Saturday", 
+                                               "Sunday")))
+    }
+```
+
+Agora os dias da semana devem estar como valores numéricos, se estiverem como valores NA, volte e verifique o erro.</br>
+Vamos verificar.</br>
+
+```{r}
+str(bikes$dayWeek)
+str(bikes)
+```
+
+Adiciona uma variável com valores únicos para o horário do dia em dias de semana e dias de fim de semana.</br>
+Com isso diferenciamos as horas dos dias de semana, das horas em dias de fim de semana.</br>
+ 
+```{r}
+bikes$workTime <- ifelse(bikes$isWorking, bikes$hr, bikes$hr + 24)
+```
+Transforma os valores de hora na madrugada, quando a demanda por bibicletas é praticamente nula.</br>
+
+```{r}
+bikes$xformHr <- ifelse(bikes$hr > 4, bikes$hr - 5, bikes$hr + 19)
+```
+Adiciona uma variável com valores únicos para o horário do dia para dias de semana e dias de fim de semana.</br>
+Considerando horas da madrugada.</br>
+
+```{r}
+bikes$xformWorkHr <- ifelse(bikes$isWorking, bikes$xformHr, bikes$xformHr + 24)
+```
+### Gera saída no Azure ML
+
+```{r}
+if(Azure) maml.mapOutputPort('bikes')
+
+```
+  O valor da variável cnt(count) representa a quantidade de bicicletas alugadas dentro de uma hora específica e cujo range é de 1 a 977, esta variável será utilizada para prever o valor das bicicletas alugadas.</br>
+  
+  Para construção do modelo preditivo vamos avaliar quais variáveis são relevantes. Para isso vamos fazer uma análise de correlação.</br>
+
+ 
+### Variável para controle do Script no Azure. </br> 
+ 
+Script Azure - Correlation 
+ 
+```{r}
+if(Azure){
+  source("src/Tools.R")
+  bikes <- maml.mapInputPort(1)
+  bikes$dteday <- set.asPOSIXct(bikes)
+}else{
+  bikes <- bikes
+}
+```
+
+  
+### Definindo as colunas para a análise de correlação.</br>
+
+```{r}
+cols <- c("mnth", "hr", "holiday", "workingday",
+          "weathersit", "temp", "hum", "windspeed",
+          "isWorking", "monthCount", "dayWeek", 
+          "workTime", "xformHr", "cnt")
+```
+ 
+São 3 os Métodos de correlação:</br> 
+
+- pearson - coeficiente usado para medir o grau de relacionamento entre duas variáveis com relação linear.</br>
+- spearman - teste não paramétrico, para medir o grau de relacionamento entre duas variaveis.</br>
+- kendall - teste não paramétrico, para medir a força de dependência entre duas variaveis.</br>
+
+### Vetor com os métodos de correlação.
+  
+```{r}
+metodos <- c('pearson','spearman')
+```
+Aplicando os métodos de correlação com a função cor().</br>
+
+```{r}
+cors <- lapply(metodos, function(NomeMetodo)
+  (cor(bikes[,cols], method = NomeMetodo)))
+```
+
+A variável cors: 
+lapply faz o loop de 2 variáveis dentro da função NomeMetodo e passa para a função cor os métodos = pearson e spearman. 
+
+```{r}
+head(cors)
+```
+
+```{r}
+require(lattice)
+
+```
+
+### Preparando o Plot </br>
+
+```{r}
+plot.cors <- function(x, labs){
+  diag(x) <- 0.0 
+  plot( levelplot(x, 
+                  main = paste("Plot de Correlação usando Método", labs),
+                  scales = list(x = list(rot = 90), cex = 1.0)) )
+}
+
+```
+### Mapa de correlação </br>
+
+```{r}
+
+Map(plot.cors, cors, metodos)
+
+```
+
+Gera saída no Azure.</br>
+
+```{r}
+if(Azure) maml.mapOutputPort('bikes')
+```
+
+# ETAPA 3 - Explorando dados (Análise Exploratória)
+
+3 - Script Azure - Analise Serie Temporal
+
+```{r}
+Azure <- FALSE
+
+if(Azure){
+  source("src/Tools.R")
+  Bikes <- maml.mapInputPort(1)
+  Bikes$dteday <- set.asPOSIXct(Bikes)
+}else{
+  bikes <- bikes
+}
+
+```
+
+Vamos explorar os dados para identificar outliers, padrões, enfim compreender os dados.</br>
+
+### Vamos criar uma série temporal para análise dos dados.</br>
+
+Avaliando a demanda por aluguel de bikes ao longo do tempo.
+Construindo um time series plot para alguns determinados horários 
+em dias úteis e dias de fim de semana.</br>
+
+```{r}
+#times <- c(7, 9, 12, 15, 18, 20, 22) 
+times <- c(6:23) 
+```
+
+
+```{r}
+# Time Series Plot
+tms.plot <- function(times){
+  ggplot(bikes[bikes$workTime == times, ], aes(x = dteday, y = cnt)) + 
+    geom_line() +
+    ylab("Numero de Bikes") +
+    labs(title = paste("Demanda de Bikes as ", as.character(times), ":00", sep = "")) +
+    theme(text = element_text(size = 20))
+}
+```
+Gerando o gráfico de aluguéis por hora.</br>
+
+```{r}
+require(ggplot2)
+lapply(times, tms.plot)
+```
+
+
+```{r}
+# Gera saida no Azure ML
+if(Azure) maml.mapOutputPort('bikes')
+```
+
+### Construindo BoxPlot
+
+A construção de BoxPlot é uma boa prática para verificar se existem valores
+acima da média, muitos outliers, como os dados estão relacionados
+
+3 - Scrit Azure BoxPlot
+
+```{r}
+Azure <- FALSE
+```
+
+```{r}
+if(Azure){
+  source("src/Tools.R")
+  Bikes <- maml.mapInputPort(1)
+  Bikes$dteday <- set.asPOSIXct(Bikes)
+}else{
+  bikes <- bikes
+}
+```
+
+# Convertendo a variável dayWeek para fator ordenado e plotando em ordem de tempo
+```{r}
+bikes$dayWeek <- fact.conv(bikes$dayWeek)
+```
+
+# Demanda de bikes x potenciais variáveis preditoras
+```{r}
+labels <- list("Boxplots - Demanda de Bikes por Hora",
+               "Boxplots - Demanda de Bikes por Estação",
+               "Boxplots - Demanda de Bikes por Dia Útil",
+               "Boxplots - Demanda de Bikes por Dia da Semana")
+
+xAxis <- list("hr", "weathersit", "isWorking", "dayWeek")
+
+```
+
+# Função para criar os boxplots
+```{r}
+plot.boxes  <- function(X, label){ 
+  ggplot(bikes, aes_string(x = X, y = "cnt", group = X)) + 
+    geom_boxplot( ) + 
+    ggtitle(label) +
+    theme(text = element_text(size = 18)) 
+  }
+
+Map(plot.boxes, xAxis, labels)
+
+```
+
+# Gera saída no Azure ML
+```{r}
+if(Azure) maml.mapOutputPort('bikes')
+```
+
+### Density Plots
+
+Script 4 Density
+
+```{r}
+Azure <- FALSE
+```
+
+
+```{r}
+if(Azure){
+  source("src/Tools.R")
+  Bikes <- maml.mapInputPort(1)
+  Bikes$dteday <- set.asPOSIXct(Bikes)
+}else{
+  bikes <- bikes
+}
+```
+
+```{r}
+
+# Visualizando o relacionamento entre as variáveis preditoras e demanda por bike
+labels <- c("Demanda de Bikes vs Temperatura",
+            "Demanda de Bikes vs Humidade",
+            "Demanda de Bikes vs Velocidade do Vento",
+            "Demanda de Bikes vs Hora")
+
+xAxis <- c("temp", "hum", "windspeed", "hr")
+```
+
+```{r}
+# Função para os Density Plots
+plot.scatter <- function(X, label){ 
+  ggplot(bikes, aes_string(x = X, y = "cnt")) + 
+    geom_point(aes_string(colour = "cnt"), alpha = 0.1) + 
+    scale_colour_gradient(low = "green", high = "blue") + 
+    geom_smooth(method = "loess") + 
+    ggtitle(label) +
+    theme(text = element_text(size = 20)) 
+  }
+
+Map(plot.scatter, xAxis, labels)
+
+```
+
+```{r}
+
+# Explorando a interação entre tempo e dia, em dias da semana e fins de semana
+labels <- list("Box plots - Demanda por Bikes as 09:00 para \n dias da semana e fins de semana",
+               "Box plots - Demanda por Bikes as 18:00  para \n dias da semana e fins de semana")
+
+Times <- list(9, 18)
+
+plot.box2 <- function(time, label){ 
+  ggplot(bikes[bikes$hr == time, ], aes(x = isWorking, y = cnt, group = isWorking)) + 
+    geom_boxplot( ) + ggtitle(label) +
+    theme(text = element_text(size = 18)) }
+
+Map(plot.box2, Times, labels)
+
+```
+
+```{r}
+# Gera saída no Azure ML
+if(Azure) maml.mapOutputPort('bikes')
+
+```
+
+# ETAPA 4 - SELEÇÃO DE VARIÁVEIS (FEATURE SELECTION)
+
+Em Machine Learning e Estatística , é o processo de seleção do subset de variáveis que sejam relevantes para a construção do modelo preditivo.
+É usado para simplificação do modelo , facilitando sua interpretação, para reduzir tempo de treinamento do modelo e melhora da generalização do modelo, evitando overfitting. </br>.
+Nos datasets sempre há dados que são redudantes ou irrelevantes para criação do modelo e podem ser removidos sem o risco de perder informações importantes.</br>
+Para definir as variáveis usamos as técnicas de fetaure selection.
+Feature selection são técnicas, espécie de filtro, que remove do seu dataset as variáveis que não serão úteis para a criação do modelo preditivo.</br>
+O principal objetivo ao usar técnicas de Feature Selection é criar um modelo preditivo com maior precissão e que seja generalizável.
+Alguns métodos para Feature Selection:</br>
+-Teste do Qui-Quadrado
+-Coeficientes de Correlação
+-Algoritmos de Eliminação Recursiva
+-Algoritmos de Regularização (LASSO, Elastic Net, Ridge Regression)</br.
+
+Feature Selection é <=> Redução de Dimensionalidade
+Tipos de Redução de Dimensionalidade
+-Principal Component Analysis (PCA)(Estudado em Python com Spark e ML)
+-Singular Value Decomposition (SVD) (Visão Computacional)</br>
+
+Perguntas para aplicar Feature Selecion: </br>
+-Suas variáveis são mensuráveis?
+-Você encontrou interdependência entre as variáveis?
+-Você tem conhecimento sobre a área de negócio que gerou os dados?
+-Sabe identificar as variáveis mais relevantes dentro do seu conjunto de dados?
+-A análise exploratória dos dados encontrou 'sujeira' nos seus dados?
+
+Para fazer esta limpeza utilizaremos no Azure o módulo Filter Based Feature Selecion e o R o modelo randomForest para calcular a significância de cada variável.
+
+```{r}
+Azure <- FALSE
+```
+
+```{r}
+if(Azure){
+  source("src/Tools.R")
+  bikes <- maml.mapInputPort(1)
+  bikes$dteday <- set.asPOSIXct(bikes)
+}else{
+  bikes <- bikes
+}
+
+dim(bikes)
+any(is.na(bikes))
+```
+
+# Criando um modelo para identificar os atributos com maior importância para o modelo preditivo
+
+```{r}
+require(randomForest)
+```
+```{r}
+# Avalidando a importância de todas as variaveis
+modelo <- randomForest(cnt ~ . , 
+                       data = bikes, 
+                       ntree = 100, 
+                       nodesize = 10,
+                       importance = TRUE)
+```
+
+```{r}
+# Plotando as variáveis por grau de importância
+varImpPlot(modelo)
+```
+
+# Removendo variáveis colineares
+```{r}
+modelo <- randomForest(cnt ~ . - mnth
+                       - hr
+                       - workingday
+                       - isWorking
+                       - dayWeek
+                       - xformHr
+                       - workTime
+                       - holiday
+                       - windspeed
+                       - monthCount
+                       - weathersit, 
+                       data = bikes, 
+                       ntree = 100, 
+                       nodesize = 10,
+                       importance = TRUE)
+
+```
+
+```{r}
+# Plotando as variáveis por grau de importância após limpeza
+varImpPlot(modelo)
+```
+```{r}
+# Gravando o resultado
+df_saida <- bikes[, c("cnt", rownames(modelo$importance))]
+```
+```{r}
+if(Azure) maml.mapOutputPort("df_saida ")
+
+```
+
+# ETAPA 5 - DEFININDO O MODELO PREDITIVO
+
+# Função para tratar as datas
+```{r}
+set.asPOSIXct <- function(inFrame) { 
+  dteday <- as.POSIXct(
+    as.integer(inFrame$dteday), 
+    origin = "1970-01-01")
+  
+  as.POSIXct(strptime(
+    paste(as.character(dteday), 
+          " ", 
+          as.character(inFrame$hr),
+          ":00:00", 
+          sep = ""), 
+    "%Y-%m-%d %H:%M:%S"))
+}
+
+char.toPOSIXct <-   function(inFrame) {
+  as.POSIXct(strptime(
+    paste(inFrame$dteday, " ", 
+          as.character(inFrame$hr),
+          ":00:00", 
+          sep = ""), 
+    "%Y-%m-%d %H:%M:%S")) }
+```
+
+
+# Variável que controla a execução do script
+
+```{r}
+Azure <- FALSE
+```
+
+```{r}
+if(Azure){
+  dataset$dteday <- set.asPOSIXct(dataset)
+}else{
+  bikes <- bikes
+}
+```
+
+```{r}
+require(randomForest)
+```
+
+
+```{r}
+model <- randomForest(cnt ~ xformWorkHr + dteday + temp + hum, 
+                      data = bikes, # altere o nome do objeto data para "dataset" de estiver trabalhando no Azure ML
+                      ntree = 40, 
+                      nodesize = 5)
+
+```
+
+```{r}
+print(model)
+```
+
+Calculo do Score
+
+```{r}
+scores <- data.frame(actual = bikes$cnt,
+                     prediction = predict(model, newdata = bikes))
+```
+
+
+# ETAPA 6 - AVALIANDO O MODELO
+```{r}
+Azure <- FALSE
+```
+
+```{r}
+if(Azure){
+  source("src/Tools.R")
+  inFrame <- maml.mapInputPort(1)
+  refFrame <- maml.mapInputPort(2)
+  refFrame$dteday <- set.asPOSIXct2(refFrame)
+}else{
+  source("src/Tools.R")
+  inFrame <- scores[, c("actual", "prediction")]
+  refFrame <- bikes
+}
+```
+Criando um dataframe.</br>
+```{r}
+# Criando um dataframe
+inFrame[, c("dteday", "monthCount", "hr", "xformWorkHr")] <- refFrame[, c("dteday", "monthCount", "hr", "xformWorkHr")]
+```
+Nomeando o dataframe.</br>
+```{r}
+# Nomeando o dataframe
+names(inFrame) <- c("cnt", "predicted", "dteday", "monthCount", "hr", "xformWorkHr")
+```
+Criando Time Series para avaliar as diferenças.</br>
+```{r}
+#  Time series plot mostrando a diferença entre valores reais e valores previstos
+library(ggplot2)
+inFrame <- inFrame[order(inFrame$dteday),]
+s <- c(7, 9, 12, 15, 18, 20, 22)
+```
+```{r}
+lapply(s, function(s){
+  ggplot() +
+    geom_line(data = inFrame[inFrame$hr == s, ], 
+              aes(x = dteday, y = cnt)) +
+    geom_line(data = inFrame[inFrame$hr == s, ], 
+              aes(x = dteday, y = predicted), color = "red") +
+    ylab("Numero de Bikes") +
+    labs(title = paste("Demanda de Bikes as ",
+                       as.character(s), ":00", spe ="")) +
+    theme(text = element_text(size = 20))
+})
+```
+Computando os resíduos.</br>
+```{r}
+# Computando os resíduos
+library(dplyr)
+inFrame <-  mutate(inFrame, resids = predicted - cnt)
+```
+Plotando os resíduos.</br>
+```{r}
+# Plotando os resíduos
+ggplot(inFrame, aes(x = resids)) + 
+  geom_histogram(binwidth = 1, fill = "white", color = "black")
+```
+
+```{r}
+
+qqnorm(inFrame$resids) 
+
+```
+Erro na chamada do qqline, troquei por plot
+
+```{r}
+# qqline(inFrame$resids)
+plot(inFrame$resids)
+```
+
+
+
+Plotando os resíduos com as horas transformadas.</br>
+```{r}
+# Plotando os resíduos com as horas transformadas
+inFrame <- mutate(inFrame, fact.hr = as.factor(hr),
+                  fact.xformWorkHr = as.factor(xformWorkHr))                                  
+facts <- c("fact.hr", "fact.xformWorkHr") 
+lapply(facts, function(x){ 
+  ggplot(inFrame, aes_string(x = x, y = "resids")) + 
+    geom_boxplot( ) + 
+    ggtitle("Residuos - Demanda de Bikes por Hora - Atual vs Previsto")})
+```
+Mediana dos resíduos por hora
+```{r}
+# Mediana dos resíduos por hora
+evalFrame <- inFrame %>%
+  group_by(hr) %>%
+  summarise(medResidByHr = format(round(
+    median(predicted - cnt), 2), 
+    nsmall = 2)) 
+```
+
+```{r}
+# Computando a mediana dos resíduos
+tempFrame <- inFrame %>%
+  group_by(monthCount) %>%
+  summarise(medResid = median(predicted - cnt)) 
+
+evalFrame$monthCount <- tempFrame$monthCount
+evalFrame$medResidByMcnt <- format(round(
+  tempFrame$medResid, 2), 
+  nsmall = 2)
+```
+
+Resumo dos resíduos.</bt>
+```{r}
+print("Resumo dos residuos")
+```
+
+```{r}
+print(evalFrame)
+```
+
+```{r}
+# Output
+outFrame <- data.frame(evalFrame)
+if(Azure) maml.mapOutputPort('outFrame')
+```
+
+
