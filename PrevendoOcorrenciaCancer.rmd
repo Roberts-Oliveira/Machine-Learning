@@ -1,0 +1,370 @@
+---
+title: "Machine Learning - Prevendo a Ocorrência de Câncer"
+author: "Roberto de Alencar Oliveira"
+date: "3 de abril de 2019"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##Classificação - Prevendo a Ocorrência de Câncer
+
+Para esta atividade faremos a previsão de classes (classificação) ou previsão de categorias.
+
+Verificando o diretório R
+```{r}
+getwd()
+
+```
+
+###Etapa 1 - Definição do Problema do Negócio
+
+Vamos nesta atividadade criar um modelo de Machine Learning que faça a Previsão de
+Ocorrência de Câncer de Mama e identifique se é maligno ou benigno.
+
+Utilizaremos para esta atividade base de dados da UCI
+
+http://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+%28Diagnostic%29
+
+
+#### Atributos do arquivo
+
+O arquivo possui 569 observações e 32 variáveis (ID, Diagnóstico e 30 variáveis de medida)
+
+<blockquote>
+1) ID number
+2) Diagnosis (M = malignant, B = benign)
+3-32)
+
+Ten real-valued features are computed for each cell nucleus:
+
+a) radius (mean of distances from center to points on the perimeter)
+b) texture (standard deviation of gray-scale values)
+c) perimeter
+d) area
+e) smoothness (local variation in radius lengths)
+f) compactness (perimeter^2 / area - 1.0)
+g) concavity (severity of concave portions of the contour)
+h) concave points (number of concave portions of the contour)
+i) symmetry
+j) fractal dimension ("coastline approximation" - 1)
+</blockquote>
+
+
+###Etapa 2 - Coletando os Dados
+
+
+```{r}
+# Os dados do câncer da mama incluem 569 observações de biópsias de câncer, 
+# cada um com 32 características (variáveis). Uma característica é um número de 
+# identificação (ID), outro é o diagnóstico de câncer, e 30 são medidas laboratoriais 
+# numéricas. O diagnóstico é codificado como "M" para indicar maligno ou "B" para 
+# indicar benigno.
+dados <- read.csv("dataset.csv", stringsAsFactors = FALSE)
+# a propriedade stringsAsFactors = FALSE não permite que qualquer variável numérica seja
+# carregada como fator
+str(dados)
+View(dados)
+```
+
+
+###Etapa 3 - Análise dos Dados
+
+
+Analisando os dados, o campo alvo será o diagnosis
+
+```{r}
+summary(dados)
+```
+
+Tabela de Contingência dos diagnósticos (B-Benigno, M-Maligno)
+
+```{r}
+table(dados$diagnosis)
+```
+
+####Pre-processamento dos dados
+Os campos que existem no dataset e não fazem sentido para o treinamento devem ser excluidos, neste caso o campo ID não tem função no treinamento do modelo
+
+Independentemente do método de aprendizagem de máquina, deve sempre ser excluídas 
+variáveis de ID. Caso contrário, isso pode levar a resultados errados porque o ID 
+pode ser usado para unicamente "prever" cada exemplo. Por conseguinte, um modelo 
+que inclui um identificador pode sofrer de superajuste (overfitting), 
+e será muito difícil usá-lo para generalizar outros dados.
+  
+  
+```{r}
+dados$id = NULL
+View(dados)
+
+# Ajustando o label da variável alvo
+dados$diagnosis = sapply(dados$diagnosis, function(x){ifelse(x=='M', 'Maligno', 'Benigno')})
+table(dados$diagnosis)
+str(dados$diagnosis)
+```
+```{r}
+# Muitos classificadores requerem que as variáveis sejam do tipo Fator
+dados$diagnosis <- factor(dados$diagnosis, levels = c("Benigno", "Maligno"), labels = c("Benigno", "Maligno"))
+str(dados$diagnosis)
+table(dados$diagnosis)
+
+```
+```{r}
+# Verificando a proporção
+round(prop.table(table(dados$diagnosis)) * 100, digits = 1) 
+```
+```{r}
+# Medidas de Tendência Central
+# Detectamos um problema de escala entre os dados, que então precisam ser normalizados
+# O cálculo de distância feito pelo kNN é dependente das medidas de escala nos dados de entrada.
+summary(dados[c("radius_mean", "area_mean", "smoothness_mean")])
+
+```
+Agora será necessário normalizar os dados para ficar na mesma base de cálculo
+```{r}
+# Criando um função de normalização
+normalizar <- function(x) {return ((x - min(x)) / (max(x) - min(x)))}
+```
+Testando a normalização
+```{r}
+# Testando a função de normalização - os resultados devem ser idênticos
+normalizar(c(1, 2, 3, 4, 5))
+normalizar(c(10, 20, 30, 40, 50))
+```
+Normalizando os dados
+Alguns algoritmos esperam receber os dados normalizados
+```{r}
+# Normalizando os dados
+dados_norm <- as.data.frame(lapply(dados[2:31], normalizar))
+View(dados_norm)
+```
+O pre-processamento pode ser igual para problemas diferentes?
+Sim, inclusive se o problema for idêntico pode haver diferentes etapas de pre-processamento
+O tipo de problema não define o pre-processamento e sim o tipo dos dados
+
+####Construindo e Treinando o Modelo com KNN
+
+###Etapa 4 - Treinando o modelo com KNN (K-nearest neighbour)
+
+KNN é um dos algoritmos mais simples e excelente para estudo e entendimento de Machine Learning
+
+```{r}
+#Vamos carregar o pacote library (class)
+#Instalando o pacote class
+#install.packages('class')
+library(class)
+```
+```{r}
+# Criando dados de treino e dados de teste
+# a base de dados possui 569 linhas, da linha 1 a 469 será carregado na variável dados_treino
+# e o restante da linha 470 a 569 na variável dados_teste
+dados_treino <- dados_norm[1:469, ]
+dados_teste <- dados_norm[470:569, ]
+```
+```{r}
+# Criando os labels para os dados de treino e de teste
+dados_treino_labels <- dados[1:469, 1]
+dados_teste_labels <- dados[470:569, 1]
+length(dados_treino_labels)
+length(dados_teste_labels)
+```
+```{r}
+# Criando o modelo
+# K = 21, definição de 21 pontos próximos
+modelo_knn_v1 <- knn(train = dados_treino, 
+                     test = dados_teste,
+                     cl = dados_treino_labels, 
+                     k = 21)
+
+```
+```{r}
+# A função knn() retorna um objeto do tipo fator com as previsões para cada exemplo no dataset de teste
+summary(modelo_knn_v1)
+```
+###Etapa 5 - Avaliando e interpretando o Modelo
+
+```{r}
+# Carregando o gmodels
+#install.packages('gmodels')
+library(gmodels)
+#search()
+```
+```{r}
+# Criando uma tabela cruzada dos dados previstos x dados atuais (matrix de confusão)
+# Usaremos amostra com 100 observações: length(dados_teste_labels)
+CrossTable(x = dados_teste_labels, y = modelo_knn_v1, prop.chisq = FALSE)
+
+```
+
+#### Interpretando os Resultados (Tabela de Confusão)
+
+A tabela cruzada mostra 4 possíveis valores, que representam os falso/verdadeiro positivo e negativo
+
+Temos duas colunas listando os labels originais nos dados observados
+
+Temos duas linhas listando os labels dos dados de teste
+
+Temos:
+
+Cenário 1: Célula Benigno (Observado) x Benigno (Previsto) - 61 casos - true positive 
+
+Cenário 2: Célula Maligno (Observado) x Benigno (Previsto) - 00 casos - false positive (o modelo errou)
+
+Cenário 3: Célula Benigno (Observado) x Maligno (Previsto) - 02 casos - false negative (o modelo errou)
+
+Cenário 4: Célula Maligno (Observado) x Maligno (Previsto) - 37 casos - true negative 
+
+####Lendo a Confusion Matrix (Perspectiva de ter ou não a doença):
+
+True Negative  = nosso modelo previu que a pessoa NÃO tinha a doença e os dados mostraram que realmente a pessoa NÃO tinha a doença
+
+False Positive = nosso modelo previu que a pessoa tinha a doença e os dados mostraram que NÃO, a pessoa tinha a doença
+
+False Negative = nosso modelo previu que a pessoa NÃO tinha a doença e os dados mostraram que SIM, a pessoa tinha a doença
+
+True Positive = nosso modelo previu que a pessoa tinha a doença e os dados mostraram que SIM, a pessoa tinha a doença
+
+Falso Positivo - Erro Tipo I
+Falso Negativo - Erro Tipo II
+
+Taxa de acerto do Modelo: 98% (acertou 98 em 100)
+
+###Etapa 6 - Otimizando a Performance do Modelo
+
+```{r}
+# Usando a função scale() para padronizar o z-score 
+?scale()
+dados_z <- as.data.frame(scale(dados[-1]))
+
+```
+
+```{r}
+# Confirmando transformação realizada com sucesso
+summary(dados_z$area_mean)
+```
+```{r}
+# Criando novos datasets de treino e de teste
+dados_treino <- dados_z[1:469, ]
+dados_teste <- dados_z[470:569, ]
+
+dados_treino_labels <- dados[ 1: 469, 1] 
+dados_teste_labels <- dados[ 470: 569, 1]
+```
+```{r}
+
+# Reclassificando
+modelo_knn_v2 <- knn(train = dados_treino, 
+                     test = dados_teste,
+                     cl = dados_treino_labels, 
+                     k = 21)
+
+```
+
+```{r}
+# Criando uma tabela cruzada dos dados previstos x dados atuais
+CrossTable(x = dados_teste_labels, y = modelo_knn_v2, prop.chisq = FALSE)
+```
+Houve aumento dos erros do Modelo
+Experimente outros valores de K
+
+###Etapa 7 - Construindo um Modelo com Algoritmo Support Vector Machine (SVM)
+
+```{r}
+# Definindo a semente para resultados reproduzíveis
+set.seed(40) 
+```
+```{r}
+# Prepara o dataset
+dados <- read.csv("dataset.csv", stringsAsFactors = FALSE)
+dados$id = NULL
+dados[,'index'] <- ifelse(runif(nrow(dados)) < 0.8,1,0)
+View(dados)
+```
+```{r}
+# Dados de treino e teste
+trainset <- dados[dados$index==1,]
+testset <- dados[dados$index==0,]
+```
+```{r}
+# Obter o índice 
+trainColNum <- grep('index', names(trainset))
+```
+```{r}
+# Remover o índice dos datasets
+trainset <- trainset[,-trainColNum]
+testset <- testset[,-trainColNum]
+```
+```{r}
+# Obter índice de coluna da variável target no conjunto de dados
+typeColNum <- grep('diag',names(dados))
+```
+```{r}
+# Cria o modelo
+# Nós ajustamos o kernel para radial, já que este conjunto de dados não tem um 
+# plano linear que pode ser desenhado
+library(e1071)
+?svm
+modelo_svm_v1 <- svm(diagnosis ~ ., 
+                     data = trainset, 
+                     type = 'C-classification', 
+                     kernel = 'radial') 
+
+```
+####Previsões
+
+```{r}
+# Previsões nos dados de treino
+pred_train <- predict(modelo_svm_v1, trainset) 
+
+```
+```{r}
+# Percentual de previsões corretas com dataset de treino
+mean(pred_train == trainset$diagnosis) 
+```
+```{r}
+# Previsões nos dados de teste
+pred_test <- predict(modelo_svm_v1, testset) 
+```
+```{r}
+# Percentual de previsões corretas com dataset de teste
+mean(pred_test == testset$diagnosis)  
+```
+
+```{r}
+# Confusion Matrix
+table(pred_test, testset$diagnosis)
+```
+
+
+###Etapa 8 - Construindo um Modelo com Algoritmo Random Forest
+
+```{r}
+# Criando o modelo
+library(rpart)
+modelo_rf_v1 = rpart(diagnosis ~ ., data = trainset, control = rpart.control(cp = .0005)) 
+
+```
+
+```{r}
+# Previsões nos dados de teste
+tree_pred = predict(modelo_rf_v1, testset, type='class')
+```
+```{r}
+# Percentual de previsões corretas com dataset de teste
+mean(tree_pred==testset$diagnosis) 
+
+```
+
+```{r}
+# Confusion Matrix
+table(tree_pred, testset$diagnosis)
+```
+
+Analisando todos os algoritmos o SVM teve melhor desempenho.
+
+
