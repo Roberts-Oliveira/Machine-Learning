@@ -1,0 +1,75 @@
+---
+title: "Análise Exploratória"
+author: "Roberto de Alencar Oliveira"
+date: "25 de abril de 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#ANÁLISE EXPLORATÓRIA DO DATASET IRIS
+
+##ETAPA1 - Problema do negócio
+
+Analisar a dimensão das pétalas de flores de 3 espécies.<br>
+
+##ETAPA2 - Definindo dados
+
+Base de dados IRIS contido no R.<br>
+iris is a data frame with 150 cases (rows) and 5 variables (columns) named Sepal.Length, Sepal.Width, Petal.Length, Petal.Width, and Species.<br>
+
+##ETAPA3 - Análise exploratória
+
+Analisando a distribuição das espécias com ggplot
+
+```{r}
+library(ggplot2)
+ggplot(iris, aes(Petal.Length, Petal.Width, color = Species)) + geom_point(size = 3)
+
+```
+
+É observado que existem 3 espécies. <br>
+
+Agora agrupar os dados em clusters com a função K-Means, excluir a coluna espécias para análise das pétalas<br>
+
+```{r}
+library(datasets)
+set.seed(101)
+m_iris<-iris[,-5] 
+str(iris)
+
+```
+
+```{r}
+str(m_iris)
+```
+
+
+```{r}
+irisCluster<-kmeans(m_iris, 3, iter.max = 30, nstart = 1,
+       algorithm = c("Hartigan-Wong", "Lloyd", "Forgy",
+                     "MacQueen"), trace=FALSE)
+irisCluster
+```
+
+Foram criados 3 clusters: cluster 1, 2 e 3
+Perceba que apesar o algoritmo ter feito a divisão dos dados em clusters,
+houve problema em dividir alguns dos dados, 
+#que apesar de terem caracteristicas diferentes, ficaram no mesmo cluster
+
+
+# Visualizando os clusters
+```{r}
+library(cluster)
+irisCluster$cluster
+```
+
+# Plot
+
+```{r}
+clusplot(m_iris, irisCluster$cluster, color = TRUE, shade = TRUE, labels = 0, lines = 0)
+```{r}
+
+
